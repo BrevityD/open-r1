@@ -54,7 +54,7 @@ _deps = [
     "isort>=5.12.0",
     "latex2sympy2_extended>=1.0.6",
     "liger_kernel==0.5.2",
-    "lighteval @ git+https://github.com/huggingface/lighteval.git@86f62259f105ae164f655e0b91c92a823a742724#egg=lighteval[math]",
+    # "lighteval @ git+https://github.com/huggingface/lighteval.git@86f62259f105ae164f655e0b91c92a823a742724#egg=lighteval[math]",
     "math-verify==0.5.2",  # Used for math verification in grpo
     "packaging>=23.0",
     "parameterized>=0.9.0",
@@ -63,8 +63,8 @@ _deps = [
     "safetensors>=0.3.3",
     "sentencepiece>=0.1.99",
     "torch==2.5.1",
-    "transformers @ git+https://github.com/huggingface/transformers.git@main",
-    "trl @ git+https://github.com/huggingface/trl.git@main",
+    # "transformers @ git+https://github.com/huggingface/transformers.git@main",
+    # "trl @ git+https://github.com/huggingface/trl.git@main",
     "vllm==0.7.1",
     "wandb>=0.19.1",
 ]
@@ -87,7 +87,8 @@ extras["tests"] = deps_list("pytest", "parameterized", "math-verify")
 extras["torch"] = deps_list("torch")
 extras["quality"] = deps_list("ruff", "isort", "flake8")
 extras["train"] = deps_list("flash_attn")
-extras["eval"] = deps_list("lighteval", "math-verify")
+# extras["eval"] = deps_list("lighteval", "math-verify")
+extras["eval"] = deps_list("math-verify")
 extras["dev"] = extras["quality"] + extras["tests"] + extras["eval"] + extras["train"]
 
 # core dependencies shared across the whole project - keep this to a bare minimum :)
@@ -105,8 +106,8 @@ install_requires = [
     deps["packaging"],  # utilities from PyPA to e.g., compare versions
     deps["safetensors"],
     deps["sentencepiece"],
-    deps["transformers"],
-    deps["trl"],
+    # deps["transformers"],
+    # deps["trl"],
 ]
 
 setup(

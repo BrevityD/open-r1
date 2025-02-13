@@ -2,6 +2,116 @@
 
 *A fully open reproduction of DeepSeek-R1. This repo is a work in progress, let's build it together!*
 
+## 0. 国内复现记录(from BD)
+
+使用 Llama3.2-1B-Instruct 模型进行了复现，对复现中遇到的问题做一下记录。一方面给自己留档，另一方面也可能会对别人有些帮助（但愿）
+
+> 主要针对 [Installation](#installation) 和 [Training models](#training-models) 章节，绝大多数问题由网络问题导致。
+
+### Chap 2. Installation
+
+依照 [Installation](#installation) 的顺序进行：
+
+首先，我没有使用uv，选择了使用conda虚拟环境，conda create、换源、更新pip并换源，无需赘言。并成功安装 vLLM
+
+在运行 `pip install -e ".[dev]"` 时，由于服务器和 github 的连接不畅，所以其中需要从 github 下载的三个依赖库无法正常安装：[lighteval](https://github.com/huggingface/lighteval), [transformers](https://github.com/huggingface/transformers) 和 [trl](https://github.com/huggingface/trl)。解决方案比较简单，首先将 [setup.py](setup.py) 中涉及到这三个依赖库的地方注释掉，然后自行安装这三个依赖。
+
+可以使用 `ssh` 协议 clone 到本地（即使用类似 `git@github.com:huggingface/lighteval.git` 的url进行clone，国内可正常访问），然后按每个依赖库的说明进行安装（或者简单运行一下 `pip install -e .`）。不使用pip直接安装的主要原因是本仓库使用了 `trl` 的一个beta版本（0.15.0.dev0），若使用0.14.0的正式版本，会有如下报错：
+
+```
+[rank4]: AttributeError: 'list' object has no attribute 'get'
+```
+
+安装中可能存在最大问题的依赖是 flash-attention。这个库的使用广度和编译难度都令人感叹，我大约重复装过四五次 flash-attn，最快的一次花了半小时。强烈建议先检查是否有ninja（gcc的速度令人绝望的慢，没有ninja根本编译不动），然后 git clone [flash-attn](https://github.com/Dao-AILab/flash-attention)，运行 `python setup.py install`。一次不行就多试几次，顺利的话大约五六分钟就能完成编译。或者试试运行 `pip install flash-attn --no-build-isolation`。
+
+接着到了pub的部分：
+
+```shell
+huggingface-cli login
+wandb login
+```
+
+huggingface-cli 国内连不上，没必要登，相应的后面的 `git-lfs` 也用不到，需要下载的文件手动下就是了。
+
+wandb 可以用，可以登。
+
+### Chap 3. Training models
+
+这里如果使用非 llama 的模型就基本没什么问题，除了所有类似 `model_name_or_path`, `dataset_name` 的部分需要自己手动下载，然后用本地路径替换。以及关闭对 huggingface hub 的自动推送（如果使用它提供的yaml文件）
+
+国内下载可以走[hf-mirror镜像](https://hf-mirror.com/)，非常感谢。lfs大文件没法直接clone，所以可以用如下的代码：
+
+```python
+import os
+
+os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+os.environ['HF_HOME'] = 'hf_cache'
+    
+# os.system('huggingface-cli download --repo-type dataset --resume-download HuggingFaceH4/Bespoke-Stratos-17k --local-dir HuggingFaceH4/Bespoke-Stratos-17k --local-dir-use-symlinks False')  # 用于下载数据集
+os.system('huggingface-cli download --resume-download deepseek-ai/DeepSeek-R1-Distill-Llama-8B --local-dir pretrained_models/DeepSeek-R1-Distill-Llama-8B --local-dir-use-symlinks False')  # 用于下载模型
+```
+
+关闭对huggingface hub的自动推送，只需要将 [类似这个config.yaml](recipes/Qwen2.5-1.5B-Instruct/grpo/config_demo.yaml) 中的 `push_to_hub: true` 改成 `false` 即可。
+
+如果使用llama 3系列模型，会遇到一个额外的问题：llama 3没有设置 tokenizer 的 `pad_token`。在自己写训练/推理脚本时可以简单的通过以下一句解决：
+
+```python
+tokenizer.pad_token = tokenizer.eos_token
+```
+
+但在本仓库中，所有训练使用的都类似于 `transformers` 提供的 `trainer` 接口，不会显式的声明 tokenizer。所以一个替代方案是直接从文件上修改tokenizer（用完记得改回去）。需要修改的模型文件包括：`special_tokens_map.json`, `tokenizer_config.json`。
+
+special_tokens_map: 在 `eos_token` 后添加
+
+```json
+{
+  "pad_token": {
+    "content": "<|eot_id|>",
+    "lstrip": false,
+    "normalized": false,
+    "rstrip": false,
+    "single_word": false
+  }
+}
+```
+
+tokenizer_config: 在大约 2055 行的位置添加
+
+```json
+{
+  "pad_token": "<|eot_id|>",
+}
+```
+
+### Chap 4. Evaluating models
+
+同样地，由于 huggingface 连接不上，所以需要手动下载涉及到的数据集，并在 [evaluate.py](src/open_r1/evaluate.py) 中修改相应的路径。
+
+如果想要在更多的 benchmark 上做评估，可以仿照 [evaluate.py](src/open_r1/evaluate.py) 的例子自己写，看看 [lighteval](https://github.com/huggingface/lighteval) 的文档。
+
+### 额外的一些
+
+主要是 vLLM 的问题。由于你无法（至少我没找到）在这个仓库中查看模型对具体某个问题的回复（可能存在的 Aha moment），所以我使用 vLLM 进行推理和定性分析。
+
+而推理时需要设置较长的上下文窗口（如32k），当设置了采样参数时，仅按vLLm文档中在声明LLM处设置 `max_model_len` 是不够的，还需要在采样参数处也设置 `max_tokens`。
+
+具体而言，可以这么设置：
+
+```python
+sampling_params = SamplingParams(
+    temperature=0.6,
+    max_tokens=32768
+    )
+llm = LLM(
+    model=model_path,
+    max_model_len=32768,
+    tensor_parallel_size=8,
+    max_num_seqs=1,
+    gpu_memory_utilization=0.5)
+```
+
+以下是原文档：
+
 **Table of Contents**  
 1. [Overview](#overview)  
 2. [Plan of attack](#plan-of-attack)  
